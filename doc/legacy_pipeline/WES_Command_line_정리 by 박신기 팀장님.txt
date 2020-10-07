@@ -1,0 +1,82 @@
+###### Example Data ���� :
+<step1.in.fastq.gz> = rawdata/TB-1-BL_1.fastq.gz
+<step2.in.fastq.gz> = rawdata/TB-1-BL_2.fastq.gz
+<reference.fasta> = References/homo_sapiens/hg19/fasta/hg19.fa
+<dbsnp.v150.hg19.vcf.gz> = References/homo_sapiens/hg19/fasta/dbsnp.v150.hg19.vcf.gz
+<SureSelect_Human_All_Exon_V5.bed> = References/homo_sapiens/hg19/targetkit/SureSelect_Human_All_Exon_V5.bed
+#################################
+
+### Step1 cutadapt (https://cutadapt.readthedocs.io/en/stable/installation.html) ###
+
+cutadapt -q 20 -a AGATCGGAAGAGCACACGTCTGAACTCCAGTCAC -A AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGTAGATCTCGGTGGTCGCCGTATCATT --minimum-length 50 -o <step1.out.1.fastq.gz> -p <step1.out.2.fastq.gz> <step1.in.1.fastq.gz> <step1.in.2.fastq.gz>
+
+InputFile �뷮 : �� 4~5Gb
+OuputFile �뷮 : �� 4~5Gb
+
+
+### Step2 bwa (https://sourceforge.net/projects/bio-bwa/files/) and samtools (https://sourceforge.net/projects/samtools/files/samtools/) ###
+
+bwa mem -M -R '@RG\tID:{sampleID}\tPL:illumina\tSM:{sampleID}' -t <threads> -k 18 <reference.fasta> <step1.out.1.fastq.gz> <step1.out.2.fastq.gz> | samtools view -Sb -F 0x100 > <step2.out.bam>
+
+InputFile �뷮 : �� 4~5Gb
+OuputFile �뷮 : �� 4~5Gb
+
+
+### Step3 picard (https://github.com/broadinstitute/picard) ###
+
+mkdir <temp>
+java -Xmx50g -jar picard-<VERSION>.jar MarkDuplicates TMP_DIR=<temp> I=<step2.out.bam> O=<step3.out.bam> M=<step3.out.txt> CREATE_INDEX=true CREATE_MD5_FILE=true REMOVE_SEQUENCING_DUPLICATES=true
+
+InputFile �뷮 : �� 4~5Gb
+OuputFile �뷮 : �� 4~5Gb
+
+
+### Step4 GATK BaseRecalibrator (https://github.com/broadinstitute/gatk) ###
+
+mkdir <temp>
+java -jar gatk-<VERSION>.jar BaseRecalibrator --tmp-dir <temp> -R <reference.fasta> -I <step3.out.bam> -O <step4.out.table> --known-sites <dbsnp.v150.hg19.vcf.gz>
+
+InputFile �뷮 : �� 4~5Gb
+OuputFile �뷮 : �� 1Mb ����
+
+
+### Step5 GATK ApplyBQSR (https://github.com/broadinstitute/gatk) ###
+
+mkdir <temp>
+java -jar gatk-<VERSION>.jar ApplyBQSR --tmp-dir <temp> -R <reference.fasta> -I <step3.out.bam> --bqsr-recal-file <step4.out.table> -O <step5.out.bam>
+
+InputFile �뷮 : �� 4~5Gb
+OuputFile �뷮 : �� 4~5Gb
+
+
+### Step6 GATK HaplotypeCaller (https://github.com/broadinstitute/gatk) ###
+
+mkdir <temp>
+java -jar gatk-<VERSION>.jar HaplotypeCaller --tmp-dir <temp> -R <reference.fasta> -I <step5.out.bam> -O <step6.out.gvcf> --intervals <SureSelect_Human_All_Exon_V5.bed> -ERC GVCF --dbsnp <dbsnp.v150.hg19.vcf.gz>
+
+InputFile �뷮 : �� 4~5Gb
+OuputFile �뷮 : �� 100~200Mb
+
+
+### Step7 GATK GenotypeGVCFs (https://github.com/broadinstitute/gatk) ###
+
+mkdir <temp>
+java -jar gatk-<VERSION>.jar GenotypeGVCFs --tmp-dir <temp> -R <reference.fasta> --intervals <SureSelect_Human_All_Exon_V5.bed> -V <step6.out.gvcf> -O <step7.out.vcf>
+
+InputFile �뷮 : �� 100~200Gb
+OuputFile �뷮 : �� 10Mb �̸�
+
+
+### Step8 GATK VariantFiltration (https://github.com/broadinstitute/gatk) ###
+
+mkdir <temp>
+java -jar gatk-<VERSION>.jar VariantFiltration --tmp-dir <temp> -V <step7.out.vcf> -O <step8.out.vcf>
+
+InputFile �뷮 : �� 10Mb �̸�
+OuputFile �뷮 : �� 10Mb �̸�
+
+
+#### ���� ���ϴ� ������
+Outbound Case1 : <step5.out.bam> and <step8.out.vcf>
+Outbound Case2 : <step8.out.vcf>
+

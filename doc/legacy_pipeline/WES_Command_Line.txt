@@ -1,0 +1,429 @@
+#Preprocessing
+
+#01_fastqc_orig -> <01_sample_fastqc_output_dir> | sample
+Sample_R1.sh 
+cat <rawdata/sample_rawdata_lane1_R1.fq.gz> <rawdata/sample_rawdata_lane2_R1.fq.gz> > <01_sample_fastqc_output_dir/sample_merged_R1.fq.gz>
+md5sum <01_sample_fastqc_output_dir/sample_merged_R1.fq.gz> > <01_sample_fastqc_output_dir/sample_merged_R1.fq.gz.md5>
+fastqc -t 2 -o <01_sample_fastqc_output_dir> <01_sample_fastqc_output_dir/sample_merged_R1.fq.gz>
+unzip <01_sample_fastqc_output_dir/sample_R1_fastqc.zip> -d <01_sample_fastqc_output_dir>
+
+
+Sample_R2.sh
+cat <rawdata/sample_rawdata_lane1_R2.fq.gz> <rawdata/sample_rawdata_lane2_R2.fq.gz> > <01_sample_fastqc_output_dir/sample_merged_R2.fq.gz>
+md5sum <01_sample_fastqc_output_dir/sample_merged_R2.fq.gz> > <01_sample_fastqc_output_dir/sample_merged_R2.fq.gz.md5>
+fastqc -t 2 -o <01_sample_fastqc_output_dir> <01_sample_fastqc_output_dir/sample_merged_R2.fq.gz>
+unzip <01_sample_fastqc_output_dir/sample_R2_fastqc.zip> -d <01_sample_fastqc_output_dir>
+
+#01-1 fasterfastqstatistics -> <01-1_sample_fasterfastqstatistics> | multisample
+ln -s <01_sample_fastqc_output_dir/sample_merged_R1.fq.gz> <01-1_sample_fasterfastqstatistics/sample_merged_R1.fq.gz>
+ln -s <01_sample_fastqc_output_dir/sample_merged_R2.fq.gz> <01-1_sample_fasterfastqstatistics/sample_merged_R2.fq.gz>
+***FasterFastqStatistics <01-1_sample_fasterfastqstatistics/sample_merged_R1.fq.gz> <01-1_sample_fasterfastqstatistics/sample_merged_R2.fq.gz>
+
+#02_trimmomatic -> <02_sample_trimmomatic_output_dir> | sample
+mkdir -p <02_sample_trimmomatic_output_dir/unpaired>
+java -jar trimmomatic-0.36.jar PE -threads 4 -phred33 <01_sample_fastqc_output_dir/sample_merged_R1.fq.gz> <01_sample_fastqc_output_dir/sample_merged_R2.fq.gz> \
+        <02_sample_trimmomatic_output_dir/sample_filt_R1.fq.gz> <02_sample_trimmomatic_output_dir/unpaired/sample_unpaired_R1.fq.gz> \
+        <02_sample_trimmomatic_output_dir/sample_filt_R2.fq.gz> <02_sample_trimmomatic_output_dir/unpaired/sample_unpaired_R2.fq.gz> \
+        ILLUMINACLIP:/BiO/BioPeople/dskim/gatk4-pipeline/Tools/Trimmomatic-0.36/adapters/TruSeq3-PE.fa:2:30:10 LEADING:3 TRAILING:3 SLIDINGWINDOW:4:15 MINLEN:50
+
+
+
+#03_fastqc_filt -> <03_sample_fastqc_filt_output_dir> | sample
+Sample_R1.sh
+ln -s <02_sample_trimmomatic_output_dir/sample_filt_R1.fq.gz> <03_sample_fastqc_filt_output_dir/sample_filt_R1.fq.gz>
+md5sum <03_sample_fastqc_filt_output_dir/sample_filt_R1.fq.gz> <03_sample_fastqc_filt_output_dir/sample_filt_R1.fq.gz.md5>
+fastqc -t 2 -o <03_sample_fastqc_filt_output_dir> <03_sample_fastqc_filt_output_dir/sample_filt_R1.fq.gz>
+unzip <03_sample_fastqc_filt_output_dir/sample_filt_R1_fastqc.zip> -d <03_sample_fastqc_filt_output_dir>
+
+Sample_R2.sh
+ln -s <02_sample_trimmomatic_output_dir/sample_filt_R2.fq.gz> <03_sample_fastqc_filt_output_dir/sample_filt_R2.fq.gz>
+md5sum <03_sample_fastqc_filt_output_dir/sample_filt_R2.fq.gz> <03_sample_fastqc_filt_output_dir/sample_filt_R2.fq.gz.md5>
+fastqc -t 2 -o <03_sample_fastqc_filt_output_dir> <03_sample_fastqc_filt_output_dir/sample_filt_R2.fq.gz>
+unzip <03_sample_fastqc_filt_output_dir/sample_filt_R2_fastqc.zip> -d <03_sample_fastqc_filt_output_dir>
+
+#04_bwasamtools_mem -> <04_bwasamtools_mem_dir> | sample
+bwa mem -M -R '@RG\tID:{sampleID}\tPL:illumina\tSM:{sampleID}' -t <threads> -k 18 <reference.fasta> \
+        <03_sample_fastqc_filt_output_dir/sample_filt_R2.fq.gz> <03_sample_fastqc_filt_output_dir/sample_filt_R2.fq.gz> \
+        | samtools view -Sb -F 0x100 > <04_bwasamtools_mem_dir/sample_bwa_out.bam>
+
+#05_gatk4_markduplicates -> <05_gatk4_markduplicates_dir> | sample
+java -Xmx6g \
+        -jar gatk.jar \
+        MarkDuplicates \
+        --TMP_DIR <05_gatk4_markduplicates_dir/tmp> \
+        --INPUT <04_bwasamtools_mem_dir/sample_bwa_out.bam> \
+        --OUTPUT <05_gatk4_markduplicates_dir/sample_markduplicated.bam> \
+        --METRICS_FILE <05_gatk4_markduplicates_dir/sample_intervals> \
+        --VALIDATION_STRINGENCY LENIENT \
+        --REMOVE_DUPLICATES \
+        --CREATE_INDEX
+
+#06_samtools_split -> <06_samtools_split_dir> | sample
+ln -s <05_gatk4_markduplicates_dir/sample_markduplicated.bam> <06_samtools_split_dir/sample.bam>
+ln -s <05_gatk4_markduplicates_dir/sample_intervals> <06_samtools_split_dir/sample.bai>
+
+#07_gatk4_baserecalibrator -> <07_gatk4_baserecalibrator_dir> | sample
+java -Xmx6g \
+        -jar gatk.jar \
+        BaseRecalibrator \
+        --tmp-dir <07_gatk4_baserecalibrator_dir/tmp> \
+        --reference <reference.fasta> \
+        --known-sites <resource_bundle/dbsnp_138.hg19.subset.vcf.gz> \
+        --known-sites <resource_bundle/Mills_and_1000G_gold_standard.indels.hg19.sites.subset.vcf.gz> \
+        --input <06_samtools_split_dir/sample.bam> \
+        --output <07_gatk4_baserecalibrator_dir/sample_bqsr.table>
+
+#08_gatk4_applybqsr -> <08_gatk4_applybqsr_dir> | sample
+java -Xmx6g \
+        -jar gatk.jar \
+        ApplyBQSR \
+        --tmp-dir <08_gatk4_applybqsr_dir/tmp> \
+        --reference <reference.fasta> \
+        --input <06_samtools_split_dir/sample.bam> \
+        --bqsr-recal-file <07_gatk4_baserecalibrator_dir/sample_bqsr.table> \
+        --output <08_gatk4_applybqsr_dir/sample_bqsr.bam>
+
+#09_gatk4_haplotypecaller_gvcf -> <09_gatk4_haplotypecaller_gvcf_dir> | sample
+#multisample 
+java -Xmx12g \
+        -jar gatk.jar \
+        HaplotypeCaller \
+        --emit-ref-confidence GVCF \
+        --tmp-dir <09_gatk4_haplotypecaller_gvcf_dir/tmp> \
+        --reference <reference.fasta> \
+        --dbsnp <resource_bundle/dbsnp_138.hg19.subset.vcf.gz> \
+        --intervals <target_region.bed> \
+        --input <08_gatk4_applybqsr_dir/sample_bqsr.bam> \
+        --output <09_gatk4_haplotypecaller_gvcf_dir/sample.g.vcf.gz> \
+        --standard-min-confidence-threshold-for-calling 30.0 \
+        --max-reads-per-alignment-start 1000 \
+        --native-pair-hmm-threads 4
+
+#10_gatk4_combinegvcfs -> <10_gatk4_combinegvcfs_dir> | multisample
+java -Xmx6g \
+        -jar gatk.jar \
+        CombineGVCFs \
+        --tmp-dir <10_gatk4_combinegvcfs_dir/tmp> \
+        --reference <reference.fasta> \
+        --intervals <target_region.bed> \
+        --variant <09_gatk4_haplotypecaller_gvcf_dir/sample.g.vcf.gz> \
+        --output <10_gatk4_combinegvcfs_dir/AllgVCFsCombined.multisample.g.vcf.gz>
+
+#11_gatk4_genotypegvcfs -> <11_gatk4_genotypegvcfs_dir> | multisample
+java -Xmx6g \
+	-jar gatk.jar \
+	GenotypeGVCFs \
+	--tmp-dir <11_gatk4_genotypegvcfs_dir/tmp> \
+	--reference <reference.fasta> \
+	--dbsnp <resource_bundle/dbsnp_138.hg19.subset.vcf.gz> \
+	--intervals <target_region.bed> \
+	--variant <10_gatk4_combinegvcfs_dir/AllgVCFsCombined.multisample.g.vcf.gz> \
+	--output <11_gatk4_genotypegvcfs_dir/AllgVCFsGenotyped.multisample.vcf.gz>
+
+#12_gatk4_variantrecalibrator_snp -> <12_gatk4_variantrecalibrator_snp_dir> | multisample
+if [ -s 12_gatk4_variantrecalibrator_snp_dir/multisample.vqsr.SNP.tranches ];then
+rm 12_gatk4_variantrecalibrator_snp_dir/multisample.vqsr.SNP.tranches
+fi
+for i in $(seq 8 -1 1);do
+if [ ! -s 12_gatk4_variantrecalibrator_snp_dir/multisample.vqsr.SNP.tranches ];then
+java -Xmx6g \
+        -jar gatk.jar \
+        VariantRecalibrator \
+        --tmp-dir <12_gatk4_variantrecalibrator_snp_dir/tmp> \
+        --reference <reference.fasta> \
+        --intervals <target_region.bed> \
+        --resource:hapmap,known=false,training=true,truth=true,prior=15.0 <resource_bundle/hapmap_3.3.hg19.sites.subset.vcf.gz> \
+        --resource:omni,known=false,training=true,truth=false,prior=12.0 <resource_bundle/1000G_omni2.5.hg19.sites.subset.vcf.gz> \
+        --resource:1000G,known=false,training=true,truth=false,prior=10.0 <resource_bundle/1000G_phase1.snps.high_confidence.hg19.sites.subset.vcf.gz> \
+        --resource:dbsnp,known=true,training=false,truth=false,prior=2.0 <resource_bundle/dbsnp_138.hg19.subset.vcf.gz> \
+        --use-annotation QD \
+        --use-annotation MQ \
+        --use-annotation MQRankSum \
+        --use-annotation ReadPosRankSum \
+        --use-annotation FS \
+        --use-annotation SOR \
+        --max-gaussians $i \
+        --mode SNP \
+        --variant <11_gatk4_genotypegvcfs_dir/AllgVCFsGenotyped.multisample.vcf.gz> \
+        --output <12_gatk4_variantrecalibrator_snp_dir//multisample.vqsr.SNP.table> \
+        --tranches-file <12_gatk4_variantrecalibrator_snp_dir/multisample.vqsr.SNP.tranches> \
+        --rscript-file <12_gatk4_variantrecalibrator_snp_dir/multisample.vqsr.SNP.R>
+fi
+done
+
+#13_gatk4_applyvqsr_snp -> <13_gatk4_applyvqsr_snp_dir> | multisample
+java -Xmx6g \
+        -jar gatk.jar \
+        ApplyVQSR \
+        --tmp-dir <13_gatk4_applyvqsr_snp_dir/multisample/tmp> \
+        --reference <reference.fasta> \
+        --intervals <target_region.bed> \
+        --mode SNP \
+        --truth-sensitivity-filter-level 99.5 \
+        --variant <11_gatk4_genotypegvcfs_dir/AllgVCFsGenotyped.multisample.vcf.gz> \
+        --tranches-file <12_gatk4_variantrecalibrator_snp_dir/multisample.vqsr.SNP.tranches> \
+        --recal-file <12_gatk4_variantrecalibrator_snp_dir//multisample.vqsr.SNP.table> \
+        --output <13_gatk4_applyvqsr_snp_dir/multisample.vqsr.SNP.vcf.gz>
+
+#14_gatk4_variantrecalibrator_indel -> <14_gatk4_variantrecalibrator_indel> | multisample
+if [ -s <14_gatk4_variantrecalibrator_indel/multisample.vqsr.INDEL.tranches> ];then
+rm <14_gatk4_variantrecalibrator_indel/multisample.vqsr.INDEL.tranches>
+fi
+for i in $(seq 4 -1 1);do
+if [ ! -s <14_gatk4_variantrecalibrator_indel/multisample.vqsr.INDEL.tranches> ];then
+java -Xmx6g \
+        -jar gatk.jar \
+        VariantRecalibrator \
+        --tmp-dir <14_gatk4_variantrecalibrator_indel/multisample/tmp> \
+        --reference <reference.fasta> \
+        --intervals <target_region.bed> \
+        --resource:mills,known=false,training=true,truth=true,prior=12.0 <resource_bundle/Mills_and_1000G_gold_standard.indels.hg19.sites.subset.vcf.gz> \
+        --resource:dbsnp,known=true,training=false,truth=false,prior=2.0 <resource_bundle/dbsnp_138.hg19.subset.vcf.gz> \
+        --use-annotation QD \
+        --use-annotation FS \
+        --use-annotation SOR \
+        --use-annotation ReadPosRankSum \
+        --use-annotation MQRankSum \
+        --max-gaussians $i \
+        --mode INDEL \
+        --variant <13_gatk4_applyvqsr_snp_dir/multisample.vqsr.SNP.vcf.gz> \
+        --output <14_gatk4_variantrecalibrator_indel/multisample/multisample.vqsr.INDEL.table> \
+        --tranches-file <14_gatk4_variantrecalibrator_indel/multisample/multisample.vqsr.INDEL.tranches> \
+        --rscript-file <14_gatk4_variantrecalibrator_indel/multisample/multisample.vqsr.INDEL.R>
+fi
+done
+
+#15_gatk4_applyvqsr_indel -> <15_gatk4_applyvqsr_indel_dir> | multisample
+java -Xmx6g \
+        -jar gatk.jar \
+        ApplyVQSR \
+        --tmp-dir <15_gatk4_applyvqsr_indel_dirmultisample/tmp> \
+        --reference <reference.fasta> \
+        --intervals <target_region.bed> \
+        --mode INDEL \
+        --truth-sensitivity-filter-level 99.0 \
+        --variant <13_gatk4_applyvqsr_snp_dir/multisample.vqsr.SNP.vcf.gz> \
+        --tranches-file <14_gatk4_variantrecalibrator_indel/multisample/multisample.vqsr.INDEL.table> \
+        --recal-file <14_gatk4_variantrecalibrator_indel/multisample/multisample.vqsr.INDEL.table> \
+        --output <15_gatk4_applyvqsr_indel_dir/multisample/multisample.vqsr.BOTH.vcf.gz>
+
+#16_gatk4_selectvariants -> <16_gatk4_selectvariants_dir> | multisample
+java -Xmx6g \
+        -jar gatk.jar \
+        SelectVariants \
+        --tmp-dir <16_gatk4_selectvariants_dir/tmp> \
+        --reference <reference.fasta> \
+        --variant <15_gatk4_applyvqsr_indel_dir/multisample/multisample.vqsr.BOTH.vcf.gz> \
+        --output <16_gatk4_selectvariants_dir/multisample/multisample.vcf.gz> \
+        --exclude-non-variants \
+        --exclude-filtered \
+        --remove-unused-alternates \
+        --sample-name [Sample_ID]
+
+#17_gatk4_variantfiltration -> <17_gatk4_variantfiltration_dir> | multisample
+java -Xmx6g \
+        -jar gatk.jar \
+        VariantFiltration \
+        --tmp-dir <17_gatk4_variantfiltration_dir/tmp> \
+        --reference <reference.fasta> \
+        --intervals <target_region.bed> \
+        --variant <16_gatk4_selectvariants_dir/multisample/multisample.vcf.gz> \
+        --output <17_gatk4_variantfiltration_dir/multisample/multisample.vcf.gz> \
+        --filter-expression "GQ<20" \
+        --filter-name "lowGQ" \
+        --create-output-variant-index
+
+#18_gatk4_selectvariants -> <18_gatk4_selectvariants_dir> | sample
+java -Xmx6g \
+        -jar gatk.jar \
+        SelectVariants \
+        --tmp-dir <18_gatk4_selectvariants_dir/sample/tmp> \
+        --reference <reference.fasta> \
+        --variant <17_gatk4_variantfiltration_dir/multisample/multisample.vcf.gz> \
+        --output <18_gatk4_selectvariants_dir/sample/sample.vcf.gz> \
+        --exclude-non-variants \
+        --exclude-filtered \
+        --remove-unused-alternates \
+        --sample-name [Sample_ID]
+
+#19_snpeff_human_run -> <19_snpeff_human_run_dir> | sample
+java -Xmx8g \
+	-Djava.io.tmpdir= <19_snpeff_human_run_dir/sample/tmp> \
+	-jar snpEff/snpEff.jar \
+	-geneId \
+	-v hg19 \
+	-s <19_snpeff_human_run_dir/sample/sample.snpeff.html> \
+	-csvStats <19_snpeff_human_run_dir/sample/sample.snpeff.stats.csv> \
+	-o vcf \
+	<18_gatk4_selectvariants_dir/sample/sample.vcf.gz> | \
+
+java -Xmx8g \
+	-Djava.io.tmpdir= <19_snpeff_human_run_dir/sample/tmp> \
+	-jar snpEff/SnpSift.jar \
+	gwasCat -v - | \
+
+java -Xmx8g \
+	-Djava.io.tmpdir= <19_snpeff_human_run_dir/sample/tmp> \
+	-jar snpEff/SnpSift.jar \
+	varType -v - | \
+
+java -Xmx8g \
+	-Djava.io.tmpdir= <19_snpeff_human_run_dir/sample/tmp> \
+	-jar snpEff/SnpSift.jar \
+	annotate -noID -info COSMID -v <snpEff/db/GRCh37/COSMICDB/v85/CosmicCodingMuts.liftover_GRCh38_to_GRCh37.vcf.gz> - | \
+
+java -Xmx8g \
+	-Djava.io.tmpdir= <19_snpeff_human_run_dir/sample/tmp> \
+	-jar snpEff/SnpSift.jar \
+	annotate -dbsnp -v - | \
+
+java -Xmx8g \
+	-Djava.io.tmpdir= <19_snpeff_human_run_dir/sample/tmp> \
+	-jar snpEff/SnpSift.jar \
+	annotate -clinvar -v - | \
+
+java -Xmx8g \
+	-Djava.io.tmpdir= <19_snpeff_human_run_dir/sample/tmp> \
+	-jar snpEff/SnpSift.jar \
+	dbnsfp -v -db <snpEff/db/GRCh37/dbNSFP/dbNSFP.txt.gz> - | \
+
+java -Xmx8g \
+	-Djava.io.tmpdir= <19_snpeff_human_run_dir/sample/tmp> \
+	-jar snpEff/SnpSift.jar \
+	annotate -v <snpEff/db/GRCh37/ExAC/ExAC.r0.3.1.sites.vep.vcf.gz> | \
+
+java -Xmx8g \
+	-Djava.io.tmpdir= <19_snpeff_human_run_dir/sample/tmp> \
+	-jar snpEff/SnpSift.jar \
+	annotate -a -noId -v <snpEff/db/GRCh37/gnomAD/gnomad.exomes.r2.1.1.sites.filter.20190531.vcf.gz> \
+        <19_snpeff_human_run_dir/sample/sample.snpeff.vcf \
+
+cat <19_snpeff_human_run_dir/sample/sample.snpeff.vcf | snpEff/scripts/vcfEffOnePerLine.pl | java -Xmx8g \
+	-Djava.io.tmpdir= <19_snpeff_human_run_dir/sample/tmp> \
+	-jar snpEff/SnpSift.jar \
+	extractFields -e "." - CHROM POS ID REF ALT FILTER VARTYPE \
+	"GEN['Sample_ID'].GT" "GEN['Sample_ID'].AD" "GEN['Sample_ID'].DP" \
+	"ANN[*].EFFECT" \
+	"ANN[*].IMPACT" \
+	"ANN[*].GENE" \
+	"ANN[*].FEATURE" \
+	"ANN[*].FEATUREID" \
+	"ANN[*].BIOTYPE" \
+	"ANN[*].RANK" \
+	"ANN[*].HGVS_C" \
+	"ANN[*].HGVS_P" \
+	"ANN[*].CDNA_POS" \
+	"ANN[*].CDNA_LEN" \
+	"ANN[*].CDS_POS" \
+	"ANN[*].CDS_LEN" \
+	"ANN[*].AA_POS" \
+	"ANN[*].AA_LEN" \
+	"ANN[*].DISTANCE" \
+	GWASCAT_TRAIT \
+	COSMID \
+	"CLNDISDB" \
+	"ORIGIN" \
+	"CLNSIG" \
+	"CLNDN" \
+	"dbNSFP_Uniprot_acc" \
+	"dbNSFP_Interpro_domain" \
+	"dbNSFP_SIFT_pred" \
+	"dbNSFP_Polyphen2_HDIV_pred" \
+	"dbNSFP_Polyphen2_HVAR_pred" \
+	"dbNSFP_LRT_pred" \
+	"dbNSFP_MutationTaster_pred" \
+	"dbNSFP_GERP___NR" \
+	"dbNSFP_GERP___RS" \
+	"dbNSFP_phastCons100way_vertebrate" \
+	"dbNSFP_1000Gp1_AF" \
+	"dbNSFP_1000Gp1_AFR_AF" \
+	"dbNSFP_1000Gp1_EUR_AF" \
+	"dbNSFP_1000Gp1_AMR_AF" \
+	"dbNSFP_1000Gp1_ASN_AF" \
+	"dbNSFP_ESP6500_AA_AF" \
+	"dbNSFP_ESP6500_EA_AF" \
+	"ExAC_AC" \
+	"ExAC_AN" \
+	"ExAC_AF" \
+	"GNOMAD_AC" \
+	"GNOMAD_AN" \
+	"GNOMAD_AF" \
+	"GNOMAD_AF_male" \
+	"GNOMAD_AF_female" \
+	"GNOMAD_AF_afr" \
+	"GNOMAD_AF_sas" \
+	"GNOMAD_AF_amr" \
+	"GNOMAD_AF_eas" \
+	"GNOMAD_AF_nfe" \
+	"GNOMAD_AF_fin" \
+	"GNOMAD_AF_asj" \
+	"GNOMAD_AF_oth" \
+	> <19_snpeff_human_run_dir/sample/sample.snpeff.tsv>
+***python merge_isofrom_snv.py -i <19_snpeff_human_run_dir/sample/sample.snpeff.tsv> -o <19_snpeff_human_run_dir/sample/sample.snpeff.isoform.tsv>
+***python write_xlsx_from_snpeff_tsv.py -g hg19 -i <19_snpeff_human_run_dir/sample/sample.snpeff.isoform.tsv> -o <19_snpeff_human_run_dir/sample/sample.snpeff.isoform.xlsx>
+***python write_xlsx_from_snpeff_tsv.py -g hg19 -i <19_snpeff_human_run_dir/sample/sample.snpeff.tsv> -o <19_snpeff_human_run_dir/sample/sample.snpeff.xlsx>
+
+#20_samtools_stats -> <20_samtools_stats_dir>
+samtools stats <04_bwasamtools_mem_dir/sample_bwa_out.bam> > <20_samtools_stats_dir/sample/sample.stats>
+
+#21_samtools_stats -> <21_samtools_stats_dir>
+samtools stats <05_gatk4_markduplicates_dir/sample_markduplicated.bam> > <21_samtools_stats_dir/sample/sample.markduplicated.stats>
+
+#22_samtools_uniqread -> <22_samtools_uniqread_dir>
+samtools view -hb -q30 <05_gatk4_markduplicates_dir/sample_markduplicated.bam> > <22_samtools_uniqread_dir/sample/sample.uniqread.bam>
+samtools index <22_samtools_uniqread_dir/sample/sample.uniqread.bam> <22_samtools_uniqread_dir/sample/sample.uniqread.bai>
+
+#23_samtools_stats -> <23_samtools_stats_dir>
+samtools stats <22_samtools_uniqread_dir/sample/sample.uniqread.bam> > <23_samtools_stats_dir/sample/sample.uniqread.stats>
+
+#24_bedtools_depth -> <24_bedtools_depth_dir>
+bedtools coverage -abam <06_samtools_split_dir/sample.bam> -b <target_region.bed> -d > <24_bedtools_depth_dir/sample/sample.dedup.bam.depth>
+bedtools coverage -abam <06_samtools_split_dir/sample.bam> -b <target_region.bed> > <24_bedtools_depth_dir/sample/sample.dedup.bam.coverage>
+
+#25_qualimap_run -> <25_qualimap_run_dir>
+unset DISPLAY
+qualimap bamqc \
+        --java-mem-size=24G \
+        -bam <05_gatk4_markduplicates_dir/sample_markduplicated.bam> \
+        -outdir <25_qualimap_run_dir/sample> \
+        -gff <target_region.bed> \
+        -nt 8
+
+#26_statistics_fastq_run -> <26_statistics_fastq_run_dir>
+***python statistics_fastq_run.py \
+        -f <01_sample_fastqc_output_dir/sample_merged_R1.fq.gz> \
+        -s <01_sample_fastqc_output_dir/sample_merged_R2.fq.gz> \
+        -a <02_sample_trimmomatic_output_dir/sample_filt_R1.fq.gz> \
+        -l <02_sample_trimmomatic_output_dir/sample_filt_R2.fq.gz> \
+        -o <26_statistics_fastq_run_dir/sample/sample.statistics.fastq.xls> \
+        -i [Sample_ID]
+
+#27_statistics_run -> <27_statistics_run_dir>
+***python statistics_run.py \
+        -f <26_statistics_fastq_run_dir/sample/> \
+        -m <20_samtools_stats_dir/sample/sample.stats> \
+        -d <21_samtools_stats_dir/sample/sample.markduplicated.stats> \
+        -u <23_samtools_stats_dir/sample/sample.uniqread.stats> \
+        -k <24_bedtools_depth_dir/sample/sample.dedup.bam.coverage> \
+        -c <24_bedtools_depth_dir/sample/sample.dedup.bam.depth> \
+        -o <27_statistics_run_dir/sample/sample.statistics.xls \
+        -r <reference.fasta> \
+        -p samtools \
+        -n WES \
+        -g <19_snpeff_human_run_dir/sample/sample.snpeff.tsv> \
+        -s [Sample_ID]
+
+#28_statistics_vcf_run -> <28_statistics_vcf_run_dir>
+#Allele_Frequency
+***python allele_freq_cal.py \
+        -i <18_gatk4_selectvariants_dir/sample/sample.vcf.gz> \
+        -o <28_statistics_vcf_run_dir/sample/sample> \
+        -s [Sample_ID]
+
+#Concordance_Calculation
+***python concordance_cal.py -i "<18_gatk4_selectvariants_dir/*/*vcf.gz>" | awk 'NR == 1; NR > 1 { print $0 | "sort -k6 -nr" }' > <28_statistics_vcf_run_dir/multisample/concordance.tsv>
+***python tsv_to_xlsx.py --tsv <28_statistics_vcf_run_dir/multisample/concordance.tsv> --xlsx <28_statistics_vcf_run_dir/multisample/concordance.xlsx> --header --sheetname Concordance
+
+#60_report_run
+
+#70_ftp_upload_run

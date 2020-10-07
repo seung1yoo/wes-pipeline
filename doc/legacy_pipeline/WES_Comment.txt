@@ -1,0 +1,19 @@
+- Command Line은 현재 사용 중인 WES-GATK4 Pipeline을 정리하였습니다.
+- 각 단계 별 번호도 WES-GATK4 Pipeline을 따르고 있습니다.
+- 각 단계에서 -> 뒤에는 해당 단계의 Directory를 작성하였습니다. 
+- INPUT / OUTPUT으로 사용되는 파일의 경우, <>로 구분하여 작성하였습니다.
+- Sample ID를 인자로 받아야 하는 경우 [Sample_ID]로 표기하였습니다.
+
+- <reference.fasta> / <target_region.bed> : hg19 Genome Fasta / Library Kit별 BED 파일입니다. 
+- GATK4와 snpEff에서 사용되는 DB 파일의 경우 
+GATK4 - <resource_bundle/~ >
+snpEff - <snpEff/db/~ > 
+로 표기 하였습니다. 
+
+-Statistics - House Scripts의 경우 Command_Line과 별도의 파일을 첨부하였습니다. 
+
+*** 12_gatk4_variantrecalibrator_snp ***
+GATK4.0.X -> GATK4.1.X로 버전 업데이트 시 Syntax가 변경되었습니다. 해당 Syntax는 아래와 같은 기준을 따릅니다. 
+4.0.x: --resource dbsnp,known=true,training=false,truth=false,prior=2.0:resource_bundle/dbsnp_138.hg19.subset.vcf.gz 
+4.1.x: --resource:dbsnp,known=true,training=false,truth=false,prior=2.0 resource_bundle/dbsnp_138.hg19.subset.vcf.gz
+
